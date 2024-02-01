@@ -278,6 +278,7 @@ impl LsmStorageInner {
     }
 
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
+    /// TODO: refactor drop(guard) by using scope
     pub fn get(&self, _key: &[u8]) -> Result<Option<Bytes>> {
         let guard = self.state.read();
         if let Some(memtable_value) = guard.memtable.get(_key) {
