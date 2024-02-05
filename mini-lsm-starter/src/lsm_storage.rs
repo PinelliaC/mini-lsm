@@ -15,6 +15,7 @@ use crate::compact::{
     CompactionController, CompactionOptions, LeveledCompactionController, LeveledCompactionOptions,
     SimpleLeveledCompactionController, SimpleLeveledCompactionOptions, TieredCompactionController,
 };
+use crate::iterators::merge_iterator::MergeIterator;
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::Manifest;
 use crate::mem_table::MemTable;
@@ -278,10 +279,14 @@ impl LsmStorageInner {
     }
 
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
-    /// TODO: refactor drop(guard) by using scope
     pub fn get(&self, _key: &[u8]) -> Result<Option<Bytes>> {
-        let guard = self.state.read();
-        if let Some(memtable_value) = guard.memtable.get(_key) {
+        // this is a block expression
+        // the guard is dropped after the block
+        let snapshot = {
+            let guard = self.state.read();
+            Arc::clone(&guard)
+        };
+        if let Some(memtable_value) = snapshot.memtable.get(_key) {
             if memtable_value.is_empty() {
                 return Ok(None);
             }
@@ -292,7 +297,7 @@ impl LsmStorageInner {
             // },
             // None => None,
         };
-        for imm_memtable in guard.imm_memtables.iter() {
+        for imm_memtable in snapshot.imm_memtables.iter() {
             if let Some(imm_memtable_value) = imm_memtable.get(_key) {
                 if imm_memtable_value.is_empty() {
                     return Ok(None);
@@ -300,7 +305,6 @@ impl LsmStorageInner {
                 return Ok(Some(imm_memtable_value));
             }
         }
-        drop(guard);
         Ok(None)
     }
 
