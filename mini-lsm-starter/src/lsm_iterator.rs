@@ -17,7 +17,18 @@ pub struct LsmIterator {
 
 impl LsmIterator {
     pub(crate) fn new(iter: LsmIteratorInner) -> Result<Self> {
-        Ok(Self { inner: iter })
+        let mut iter = Self { inner: iter };
+        iter.move_to_non_delete()?;
+        Ok(iter)
+    }
+}
+
+impl LsmIterator {
+    fn move_to_non_delete(&mut self) -> Result<()> {
+        while self.is_valid() && self.inner.value().is_empty() {
+            self.inner.next()?;
+        }
+        Ok(())
     }
 }
 
@@ -37,7 +48,9 @@ impl StorageIterator for LsmIterator {
     }
 
     fn next(&mut self) -> Result<()> {
-        self.inner.next()
+        self.inner.next()?;
+        self.move_to_non_delete()?;
+        Ok(())
     }
 }
 
@@ -82,12 +95,22 @@ impl<I: StorageIterator> StorageIterator for FusedIterator<I> {
     }
 
     fn next(&mut self) -> Result<()> {
-        if !self.is_valid() {
-            bail!("FusedIterator: next() called on invalid iterator");
+        // if !self.is_valid() {
+        //     bail!("FusedIterator: next() called on invalid iterator");
+        // }
+        // if let e @ Err(_) = self.iter.next() {
+        //     self.has_errored = true;
+        //     return e;
+        // }
+        // Ok(())
+        if self.has_errored {
+            bail!("the iterator is tainted");
         }
-        if let e @ Err(_) = self.iter.next() {
-            self.has_errored = true;
-            return e;
+        if self.iter.is_valid() {
+            if let e @ Err(_) = self.iter.next() {
+                self.has_errored = true;
+                return e;
+            }
         }
         Ok(())
     }

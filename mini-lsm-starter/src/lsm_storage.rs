@@ -383,6 +383,17 @@ impl LsmStorageInner {
         _lower: Bound<&[u8]>,
         _upper: Bound<&[u8]>,
     ) -> Result<FusedIterator<LsmIterator>> {
-        unimplemented!()
+        let snapshot = {
+            let guard = self.state.read();
+            Arc::clone(&guard)
+        }; // drop global lock here
+
+        let mut memtable_iters = Vec::with_capacity(snapshot.imm_memtables.len() + 1);
+        memtable_iters.push(Box::new(snapshot.memtable.scan(_lower, _upper)));
+        for memtable in snapshot.imm_memtables.iter() {
+            memtable_iters.push(Box::new(memtable.scan(_lower, _upper)));
+        }
+        let iter = MergeIterator::create(memtable_iters);
+        Ok(FusedIterator::new(LsmIterator::new(iter)?))
     }
 }
